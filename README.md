@@ -49,7 +49,7 @@ The script performs the following key steps:
 
 * **Initial Setup:**
     * Sets `WD=/mnt` as the working directory.
-    * Requires the Btrfs UUID as a command-line argument.
+    * Sets `BTRFS_UUID=` as the Btrfs UUID.
     * Mounts the Btrfs filesystem (`subvolid=5`) to `/mnt` using the provided UUID.
 * **Subvolume Cloning:**
     * Clones the `root` subvolume to `@` (common for Btrfs root setups).
