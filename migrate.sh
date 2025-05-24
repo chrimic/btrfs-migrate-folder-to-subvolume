@@ -262,8 +262,6 @@ migrate_folder_to_flat_subvolume() {
   fi
 }
 
-
-
 # --- Main Script Execution ---
 
 # Ensure script is running with root privileges
@@ -284,6 +282,9 @@ clone_subvolume root @
 # Clone the 'root' subvolume to 'root_bak'. This serves as a backup
 # of the original root state.
 clone_subvolume root root_bak
+
+# Set @ as default subvolume
+btrfs subvolume set-default "$WD/@"
 
 # Exit immediately if a command exits with a non-zero status.
 set -e
@@ -320,3 +321,11 @@ read -rp "Please, review $WD/@/etc/fstab. Press Enter to continue..."
 
 $EDITOR "$WD/@/etc/fstab"
 
+# Now, reboot your system, in grub menu edit the first entry and change the parameter subvol.
+# Execute this function after reboot your system:
+# Reference: https://fedoraproject.org/wiki/GRUB_2#Instructions_for_UEFI-based_systems
+fedora_update_grub() {
+  rm /boot/efi/EFI/fedora/grub.cfg
+  rm /boot/grub2/grub.cfg
+  dnf reinstall shim-* grub2-efi-* grub2-common
+}
