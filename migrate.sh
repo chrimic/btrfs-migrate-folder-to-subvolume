@@ -35,6 +35,9 @@ WD="/mnt"
 # Define the BTRFS partition UUID (check your current file /etc/fstab)
 BTRFS_UUID="95f7571f-4ddd-4d1e-80fb-61f62ac56191"
 
+# Define the editor for editing the /etc/fstab.
+EDITOR="nano"
+
 # Function to check if script is run as root
 check_root() {
   if [ "$EUID" -ne 0 ]; then
@@ -315,6 +318,5 @@ show_subvolumes
 echo
 read -rp "Please, review $WD/@/etc/fstab. Press Enter to continue..."
 
-EDITOR="${EDITOR:-nano}"
-"$EDITOR" "$WD/@/etc/fstab"
+$EDITOR "$WD/@/etc/fstab"
 
