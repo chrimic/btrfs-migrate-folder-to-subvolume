@@ -33,51 +33,47 @@ set -e
 
 # Define the working directory. This is where the Btrfs filesystem is expected
 # to be mounted or where operations will be performed relative to.
-WD=/mnt
+WD="/mnt"
 
 # Define the BTRFS partition UUID (check your current file /etc/fstab)
 BTRFS_UUID="95f7571f-4ddd-4d1e-80fb-61f62ac56191"
+
+# Function to check if script is run as root
+check_root() {
+  if [ "$EUID" -ne 0 ]; then
+    echo "This script must be run as root"
+    exit 1
+  fi
+}
 
 # Function to display all Btrfs subvolumes in the current directory.
 show_subvolumes() {
   btrfs subvolume list .
 }
 
+# Function to check btrfs inode type.
+# Reference: https://stackoverflow.com/questions/25908149/how-to-test-if-location-is-a-btrfs-subvolume
+check_btrfs_inode() {
+  local dir=$1
+  local expected_inode=$2
+
+  # Controlla se il filesystem è btrfs
+  [ "$(stat -f --format="%T" "$dir")" == "btrfs" ] || return 1
+  # Ottieni il numero inode della directory
+  local inode
+  inode="$(stat --format="%i" "$dir")"
+  [ "$inode" -eq "$expected_inode" ]
+}
+
 # Function to check if a given path is a Btrfs subvolume.
 # A Btrfs subvolume has a specific inode number (256 for regular subvolumes).
-# Reference: https://stackoverflow.com/questions/25908149/how-to-test-if-location-is-a-btrfs-subvolume
 is_btrfs_subvolume() {
-  local dir=$1
-  # Check if the filesystem type of the directory is btrfs.
-  [ "$(stat -f --format="%T" "$dir")" == "btrfs" ] || return 1
-  # Get the inode number of the directory.
-  inode="$(stat --format="%i" "$dir")"
-  case "$inode" in
-    256)
-      # Inode 256 indicates a regular Btrfs subvolume.
-      return 0;;
-    *)
-      # Any other inode number means it's not a regular subvolume.
-      return 1;;
-  esac
+   check_btrfs_inode "$1" 256
 }
 
 # Function to check if a given path is an "old" Btrfs subvolume.
-# Reference: https://stackoverflow.com/questions/25908149/how-to-test-if-location-is-a-btrfs-subvolume
 is_btrfs_old_subvolume() {
-  local dir=$1
-  # Check if the filesystem type of the directory is btrfs.
-  [ "$(stat -f --format="%T" "$dir")" == "btrfs" ] || return 1
-  # Get the inode number of the directory.
-  inode="$(stat --format="%i" "$dir")"
-  case "$inode" in
-    2)
-      # Inode 2 indicates that this was a subvolume before doing the snapshot of the root subvolume.
-      return 0;;
-    *)
-      # Any other inode number means it's not this case.
-      return 1;;
-  esac
+   check_btrfs_inode "$1" 2
 }
 
 # Function to create a Btrfs snapshot (clone) of a source subvolume.
@@ -107,6 +103,15 @@ move() {
   rsync -aAXHS "$SRC" "$DST"
 }
 
+# Migrate owner, permissions, and SELinux context from the old directory to the new temp subvolume
+migrate_permissions() {
+  local source=$1
+  local target=$2
+  chown --reference="$source" "$target"
+  chmod --reference="$source" "$target"
+  chcon --reference="$source" "$target"
+}
+
 # Function to migrate a regular folder into a nested Btrfs subvolume.
 # This function handles three scenarios for the SOURCE directory:
 # 1. If it's already a regular Btrfs subvolume (inode 256), do nothing.
@@ -130,14 +135,12 @@ migrate_folder_to_nested_subvolume() {
       # Create a temporary subvolume
       btrfs subvolume create "$SOURCE"_temp
       # Migrate owner, permissions, and SELinux context from the old directory to the new temp subvolume
-      chown --reference="$SOURCE" "$SOURCE"_temp
-      chmod --reference="$SOURCE" "$SOURCE"_temp
-      chcon --reference="$SOURCE" "$SOURCE"_temp
+      migrate_permissions "$SOURCE" "${SOURCE}_temp"
       # Remove the old directory (which was an old subvolume)
       rm -r "$SOURCE"
       # Rename the temporary subvolume to the original source name
       mv "$SOURCE"_temp "$SOURCE"
-    else
+    else # $SOURCE should be a regular folder
       # If it's a regular directory, move it to a temporary name
       mv "$SOURCE" "$SOURCE"_temp || (echo "skipping $SOURCE" && return 0)
       # Create a new Btrfs subvolume at the original source path
@@ -163,16 +166,35 @@ migrate_folder_to_nested_subvolume() {
 # It also creates an empty directory at the original source path and reminds
 # the user to update fstab.
 # Arguments:
-#   $1: The source directory to be migrated.
-#   $2: The name of the new top-level subvolume (e.g., "home" for @home).
+#   $1: The source directory to be migrated (e.g., "home").
+#   $2: The name of the new top-level subvolume (e.g., "@home").
 migrate_folder_to_flat_subvolume() {
   local SUBVOL="$WD/$2" # Construct the full path for the new top-level subvolume
   local SOURCE="$1"
 
+  if [ -d "$SUBVOL" ] && (is_btrfs_subvolume "$SUBVOL"); then
+    echo "WARNING $SUBVOL is already a btrfs subvolume. Nothing to be done."
+    return 0
+  fi
+
   if [ -d "$SOURCE" ]; then
     if (is_btrfs_subvolume "$SOURCE"); then
       echo "WARNING $SOURCE is btrfs subvolume. Nothing to be done."
-    else
+    elif (is_btrfs_old_subvolume "$SOURCE"); then
+      # Move the original directory to a temporary name
+      mv "$SOURCE" "$SOURCE"_temp
+      # Create the new top-level Btrfs subvolume
+      btrfs subvolume create "$SUBVOL"
+      # Create an empty directory at the original source path.
+      # This directory will serve as the mount point for the new top-level subvolume.
+      mkdir "$SOURCE"
+      # Migrate owner, permissions, and SELinux context from the temporary directory to the new empty directory
+      migrate_permissions "${SOURCE}_temp" "$SOURCE"
+      echo "deleting $SOURCE"_temp
+      # Remove the temporary directory
+      rm -r "$SOURCE"_temp
+      echo "Remember to add subvol=$2 to fstab to mount the new top-level subvolume."
+    else # $SOURCE should be a regular folder
       # Move the original directory to a temporary name
       mv "$SOURCE" "$SOURCE"_temp
       # Create the new top-level Btrfs subvolume
@@ -197,6 +219,9 @@ migrate_folder_to_flat_subvolume() {
 }
 
 # --- Main Script Execution ---
+
+# Ensure script is running with root privileges
+check_root
 
 # Mount the Btrfs filesystem using the provided UUID.
 # The subvolid=5 typically refers to the default top-level subvolume.
