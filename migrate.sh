@@ -122,6 +122,37 @@ migrate_permissions() {
   chcon --reference="$source" "$target"
 }
 
+# Function to update etc/fstab with a new subvolume entry
+# Arguments:
+#   $1: etc/fstab location
+#   $2: New mount point path (e.g., "/home")
+#   $3: Subvolume name (e.g., "@home")
+add_fstab_entry() {
+  local fstab="$1"
+  local mount_point="$2"
+  local subvol_name="$3"
+
+  # Find the line with UUID, path "/" and filesystem "btrfs"
+  local source_line
+  source_line=$(grep "UUID=$BTRFS_UUID.*btrfs" "$fstab" | grep " / ")
+  
+  if [ -n "$source_line" ]; then
+    # Create new line by replacing mount point and adding subvol
+    local new_line
+    new_line=$(echo "$source_line" | sed "s| / | $mount_point |" | sed "s/subvol=[^,]*/subvol=$subvol_name/")
+    
+    # Append the new line to fstab if it doesn't exist
+    if ! grep -q " $mount_point " "$fstab"; then
+      echo "$new_line" >> "$fstab"
+      echo "Added new entry to $fstab for $mount_point with subvol=$subvol_name"
+    else
+      echo "Entry for $mount_point already exists in $fstab"
+    fi
+  else
+    echo "Could not find source entry with UUID=$BTRFS_UUID in $fstab"
+  fi
+}
+
 # Function to migrate a regular folder into a nested Btrfs subvolume.
 # This function handles three scenarios for the SOURCE directory:
 # 1. If it's already a regular Btrfs subvolume (inode 256), do nothing.
@@ -175,6 +206,7 @@ migrate_folder_to_nested_subvolume() {
 # and then the original folder's content will be moved into it.
 # It also creates an empty directory at the original source path and reminds
 # the user to update fstab.
+# Remember to add subvol=$2 to fstab to mount the new top-level subvolume.
 # Arguments:
 #   $1: The source directory to be migrated (e.g., "home").
 #   $2: The name of the new top-level subvolume (e.g., "@home").
@@ -204,7 +236,6 @@ migrate_folder_to_flat_subvolume() {
       echo "deleting $SOURCE"_temp
       # Remove the temporary directory
       rm -r "$SOURCE"_temp
-      echo "Remember to add subvol=$2 to fstab to mount the new top-level subvolume."
     else # $SOURCE should be a regular folder
       # Move the original directory to a temporary name
       mv "$SOURCE" "$SOURCE"_temp
@@ -222,12 +253,13 @@ migrate_folder_to_flat_subvolume() {
       echo "deleting $SOURCE"_temp
       # Remove the temporary directory
       rm -r "$SOURCE"_temp
-      echo "Remember to add subvol=$2 to fstab to mount the new top-level subvolume."
     fi
   else
     echo "WARNING | Directory $SOURCE does not exist. Cannot create a subvolume."
   fi
 }
+
+
 
 # --- Main Script Execution ---
 
@@ -256,6 +288,7 @@ set -e
 # Migrate the 'home' folder to a flat (top-level) subvolume named '@home'.
 # This means /mnt/@/home will become a mount point for /mnt/@home.
 migrate_folder_to_flat_subvolume @/home @home
+add_fstab_entry @/etc/fstab /home @home
 
 # Migrate the 'opt' folder to a nested subvolume within '@'.
 # This means /mnt/@/opt will become a subvolume itself.
@@ -278,3 +311,10 @@ migrate_folder_to_nested_subvolume @/var/lib/mysql
 
 # Show the list of all Btrfs subvolumes after the migration operations.
 show_subvolumes
+
+echo
+read -rp "Please, review $WD/@/etc/fstab. Press Enter to continue..."
+
+EDITOR="${EDITOR:-nano}"
+"$EDITOR" "$WD/@/etc/fstab"
+
