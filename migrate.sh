@@ -28,9 +28,6 @@
 # what each command does and have a full backup of your data before
 # executing it. Read the script thoroughly before running.
 
-# Exit immediately if a command exits with a non-zero status.
-set -e
-
 # Define the working directory. This is where the Btrfs filesystem is expected
 # to be mounted or where operations will be performed relative to.
 WD="/mnt"
@@ -48,6 +45,8 @@ check_root() {
 
 # Function to display all Btrfs subvolumes in the current directory.
 show_subvolumes() {
+  echo
+  echo "Subvolume list:"
   btrfs subvolume list .
 }
 
@@ -83,6 +82,17 @@ is_btrfs_old_subvolume() {
 clone_subvolume() {
   local SRC="$1"
   local NEW="$2"
+  
+  if [ ! -d "$SRC" ]; then
+    echo "WARNING | Source directory $SRC does not exist."
+    return 1
+  fi
+  
+  if [ -d "$NEW" ]; then
+    echo "NO-OP   | Destination directory $NEW already exists."
+    return 1
+  fi
+  
   btrfs subvolume snapshot "$SRC" "$NEW"/
 }
 
@@ -125,13 +135,13 @@ migrate_permissions() {
 # Arguments:
 #   $1: The source directory to be migrated.
 migrate_folder_to_nested_subvolume() {
-  local SOURCE="$1"
+  local SOURCE="$WD/$1"
 
   if [ -d "$SOURCE" ]; then
     if (is_btrfs_subvolume "$SOURCE"); then
-      echo "WARNING $SOURCE is btrfs subvolume. Nothing to be done."
+      echo "NO-OP   | $SOURCE is already a btrfs subvolume. Nothing to be done."
     elif (is_btrfs_old_subvolume "$SOURCE"); then
-      echo "WARNING $SOURCE is btrfs old subvolume (inode 2). I'm deleting it and recreating."
+      echo "WARNING | $SOURCE is btrfs old subvolume (inode 2). I'm deleting it and recreating."
       # Create a temporary subvolume
       btrfs subvolume create "$SOURCE"_temp
       # Migrate owner, permissions, and SELinux context from the old directory to the new temp subvolume
@@ -156,7 +166,7 @@ migrate_folder_to_nested_subvolume() {
       rm -r "$SOURCE"_temp
     fi
   else
-    echo "Directory $SOURCE does not exist. Cannot create a subvolume."
+    echo "WARNING | Directory $SOURCE does not exist. Cannot create a subvolume."
   fi
 }
 
@@ -173,14 +183,15 @@ migrate_folder_to_flat_subvolume() {
   local SOURCE="$1"
 
   if [ -d "$SUBVOL" ] && (is_btrfs_subvolume "$SUBVOL"); then
-    echo "WARNING $SUBVOL is already a btrfs subvolume. Nothing to be done."
+      echo "NO-OP   | $SUBVOL is already a btrfs subvolume. Nothing to be done."
     return 0
   fi
 
   if [ -d "$SOURCE" ]; then
     if (is_btrfs_subvolume "$SOURCE"); then
-      echo "WARNING $SOURCE is btrfs subvolume. Nothing to be done."
+      echo "WARNING | $SOURCE is btrfs subvolume. Nothing to be done."
     elif (is_btrfs_old_subvolume "$SOURCE"); then
+      echo "WARNING | $SOURCE is btrfs old subvolume (inode 2)."
       # Move the original directory to a temporary name
       mv "$SOURCE" "$SOURCE"_temp
       # Create the new top-level Btrfs subvolume
@@ -214,7 +225,7 @@ migrate_folder_to_flat_subvolume() {
       echo "Remember to add subvol=$2 to fstab to mount the new top-level subvolume."
     fi
   else
-    echo "Directory $SOURCE does not exist. Cannot create a subvolume."
+    echo "WARNING | Directory $SOURCE does not exist. Cannot create a subvolume."
   fi
 }
 
@@ -239,38 +250,31 @@ clone_subvolume root @
 # of the original root state.
 clone_subvolume root root_bak
 
-# Change into the newly created '@' subvolume. All subsequent operations
-# will be relative to this subvolume.
-cd @
+# Exit immediately if a command exits with a non-zero status.
+set -e
 
 # Migrate the 'home' folder to a flat (top-level) subvolume named '@home'.
 # This means /mnt/@/home will become a mount point for /mnt/@home.
-migrate_folder_to_flat_subvolume home @home
+migrate_folder_to_flat_subvolume @/home @home
 
 # Migrate the 'opt' folder to a nested subvolume within '@'.
 # This means /mnt/@/opt will become a subvolume itself.
-migrate_folder_to_nested_subvolume opt
+migrate_folder_to_nested_subvolume @/opt
 
 # Migrate the 'srv' folder to a nested subvolume within '@'.
-migrate_folder_to_nested_subvolume srv
-
-# Change into the 'var' directory (which is inside '@').
-cd var
+migrate_folder_to_nested_subvolume @/srv
 
 # Migrate various subdirectories within 'var' to nested subvolumes.
-migrate_folder_to_nested_subvolume abs
-migrate_folder_to_nested_subvolume cache
-migrate_folder_to_nested_subvolume tmp
-migrate_folder_to_nested_subvolume spool
+migrate_folder_to_nested_subvolume @/var/abs
+migrate_folder_to_nested_subvolume @/var/cache
+migrate_folder_to_nested_subvolume @/var/tmp
+migrate_folder_to_nested_subvolume @/var/spool
 
-# Change into the 'lib' directory (which is inside 'var' and thus inside '@').
-cd lib
-
-# Migrate various subdirectories within 'lib' to nested subvolumes.
-migrate_folder_to_nested_subvolume machines
-migrate_folder_to_nested_subvolume docker
-migrate_folder_to_nested_subvolume postgres
-migrate_folder_to_nested_subvolume mysql
+# Migrate various subdirectories within 'var/lib' to nested subvolumes.
+migrate_folder_to_nested_subvolume @/var/lib/machines
+migrate_folder_to_nested_subvolume @/var/lib/docker
+migrate_folder_to_nested_subvolume @/var/lib/postgres
+migrate_folder_to_nested_subvolume @/var/lib/mysql
 
 # Show the list of all Btrfs subvolumes after the migration operations.
 show_subvolumes
