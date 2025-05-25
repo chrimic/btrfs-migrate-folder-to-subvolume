@@ -26,26 +26,13 @@ A Bash script designed to assist in **migrating existing directories into Btrfs 
 * **A Btrfs filesystem** already formatted and available.
 * **Crucially: A full backup of your data.**
 
-## Usage
-
-1.  **Save the script:** Save the script content to a file, for example, `migrate_btrfs.sh`.
-2.  **Check the content** and edit it as your needs. You need to provide the UUID of your Btrfs filesystem. You can find your Btrfs UUID using `sudo blkid` or `lsblk -f` or check your current `/etc/fstab`.
-
-3.  **Make it executable:**
-    ```bash
-    chmod +x migrate.sh
-    ```
-4.  **Run the script with the Btrfs filesystem UUID:**
-
-    ```bash
-    sudo ./migrate.sh
-    ```
-
-    The script expects the Btrfs filesystem to be mounted at `/mnt` before it starts its operations (or it will attempt to mount `subvolid=5` to `/mnt`). The migration process will then create subvolumes and move data as defined within the script.
-
 ## Script Overview
 
-The script performs the following key steps:
+The repository contains two scripts:
+
+### migrate_root.sh
+
+This script performs the following key steps:
 
 * **Initial Setup:**
     * Sets `WD=/mnt` as the working directory.
@@ -61,11 +48,22 @@ The script performs the following key steps:
     * Navigates into `var/lib` and migrates `machines`, `docker`, `postgres`, `mysql` to nested subvolumes.
 * **Final Step:** Lists all subvolumes after the migration to show the new structure.
 
-## Important Considerations
+### migrate_home.sh
+
+This script helps migrate the `.cache` directory in your home folder to a separate subvolume:
+
+* Runs with root privileges to perform Btrfs operations
+* Creates a nested subvolume from the existing `.cache` directory
+* Preserves all permissions and attributes during migration
+* Useful for excluding cache data from system snapshots
+
+## Usage
+
+### For root filesystem migration:
 
 * **Modify with Caution:** The paths and migration targets (`home`, `opt`, `srv`, `var/lib/docker`, etc.) are hardcoded in the script. **Review and modify these paths** within the script to match your specific directory structure and desired Btrfs layout.
-* **`fstab` Update:** For flat subvolumes like `home` (migrated to `@home`), you **MUST** update your `/etc/fstab` to properly mount the new subvolume at boot.
-* **SELinux/AppArmor:** The script attempts to preserve SELinux contexts with `chcon --reference`. Ensure this is sufficient for your system, or make additional adjustments if needed.
+* **`fstab` Update:** For flat subvolumes like `home` (migrated to `@home`), you **MUST** update your `/etc/fstab` to properly mount the new subvolume at boot. The script will try to update your `/etc/fstab` automatically.
+* **SELinux/AppArmor:** The script attempts to preserve SELinux contexts with `chcon --reference`. Ensure this is enough for your system, or make additional adjustments if needed.
 * **Read the comments:** The script is heavily commented. Read through the comments to understand the exact purpose of each function and command before execution.
 
 ## License

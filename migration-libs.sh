@@ -159,7 +159,7 @@ add_fstab_entry() {
 # Arguments:
 #   $1: The source directory to be migrated.
 migrate_folder_to_nested_subvolume() {
-  local SOURCE="$WD/$1"
+  local SOURCE="$1"
 
   if [ -d "$SOURCE" ]; then
     if (is_btrfs_subvolume "$SOURCE"); then
@@ -205,7 +205,7 @@ migrate_folder_to_nested_subvolume() {
 #   $2: The name of the new top-level subvolume (e.g., "@home").
 migrate_folder_to_flat_subvolume() {
   local SOURCE="$1"
-  local SUBVOL="$WD/$2" # Construct the full path for the new top-level subvolume
+  local SUBVOL="$2" # Construct the full path for the new top-level subvolume
 
   if [ -d "$SUBVOL" ] && (is_btrfs_subvolume "$SUBVOL"); then
       echo "NO-OP   | $SUBVOL is already a btrfs subvolume. Nothing to be done."

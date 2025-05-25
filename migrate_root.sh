@@ -38,6 +38,7 @@ BTRFS_UUID="95f7571f-4ddd-4d1e-80fb-61f62ac56191"
 # Define the editor for editing the /etc/fstab.
 EDITOR="nano"
 
+# Include helper functions
 source migration-libs.sh
 
 # --- Main Script Execution ---
@@ -98,7 +99,7 @@ echo
 # TODO Automatic change / subvol.
 read -rp "Please, review $WD/@/etc/fstab. Remember to change / subvol. Press Enter to continue..."
 
-$EDITOR "$WD/@/etc/fstab"
+$EDITOR "@/etc/fstab"
 
 # Now, reboot your system, in grub menu edit the first entry and change the parameter subvol.
 # Execute this function after reboot your system:
