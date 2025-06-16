@@ -171,7 +171,7 @@ migrate_folder_to_nested_subvolume() {
       # Migrate owner, permissions, and SELinux context from the old directory to the new temp subvolume
       migrate_permissions "$SOURCE" "${SOURCE}_temp"
       # Remove the old directory (which was an old subvolume)
-      rm -r "$SOURCE"
+      rm -rf "$SOURCE"
       # Rename the temporary subvolume to the original source name
       mv "$SOURCE"_temp "$SOURCE"
     else # $SOURCE should be a regular folder
@@ -187,7 +187,7 @@ migrate_folder_to_nested_subvolume() {
       chcon --reference="$SOURCE"_temp "$SOURCE"
       echo "deleting $SOURCE"_temp
       # Remove the temporary directory
-      rm -r "$SOURCE"_temp
+      rm -rf "$SOURCE"_temp
     fi
   else
     echo "WARNING | Directory $SOURCE does not exist. Cannot create a subvolume."
@@ -228,7 +228,7 @@ migrate_folder_to_flat_subvolume() {
       migrate_permissions "${SOURCE}_temp" "$SOURCE"
       echo "deleting $SOURCE"_temp
       # Remove the temporary directory
-      rm -r "$SOURCE"_temp
+      rm -rf "$SOURCE"_temp
     else # $SOURCE should be a regular folder
       # Move the original directory to a temporary name
       mv "$SOURCE" "$SOURCE"_temp
@@ -245,7 +245,7 @@ migrate_folder_to_flat_subvolume() {
       chcon --reference="$SOURCE"_temp "$SOURCE"
       echo "deleting $SOURCE"_temp
       # Remove the temporary directory
-      rm -r "$SOURCE"_temp
+      rm -rf "$SOURCE"_temp
     fi
   else
     echo "WARNING | Directory $SOURCE does not exist. Cannot create a subvolume."
